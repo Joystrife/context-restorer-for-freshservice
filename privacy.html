@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Privacy & Security Notice — Context Restorer for Freshservice</title>
+  <style>
+    :root{--text:#12213f;--muted:#65728a;--blue:#1768f2;--line:#e0e8f3}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:#fff}
+    main{max-width:860px;margin:0 auto;padding:56px 24px 80px}
+    h1{font-size:38px;margin:0 0 8px;letter-spacing:-.6px}h2{margin-top:34px;border-top:1px solid var(--line);padding-top:28px}h3{margin-top:24px}
+    p,li{line-height:1.65}.muted{color:var(--muted)}a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+    code{background:#f3f6fb;padding:.15rem .35rem;border-radius:5px}
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="index.html">← Context Restorer for Freshservice</a></p>
+  <h1>Privacy and Security Notice</h1>
+  <p class="muted"><strong>Context Restorer for Freshservice</strong><br>Developed by Leo Naloufi</p>
+
+  <h2>Purpose</h2>
+  <p>Context Restorer for Freshservice preserves browser navigation context when Freshservice/Freshworks reauthentication returns the user to a generic home page or dashboard instead of the page used before session expiration.</p>
+  <p>The extension does not alter authentication, extend session duration, bypass security controls, or access identity-provider credentials.</p>
+
+  <h2>Permissions</h2>
+
+  <h3><code>webNavigation</code></h3>
+  <p>This permission is used to receive top-level HTTPS navigation events so the extension can:</p>
+  <ul>
+    <li>detect compatible Freshservice portals;</li>
+    <li>identify FreshID logout and login transitions;</li>
+    <li>remember useful Freshservice navigation context;</li>
+    <li>detect the return to Freshservice after authentication;</li>
+    <li>restore the previously used Freshservice page when necessary.</li>
+  </ul>
+  <p>Navigation information used by the extension is not transmitted to the developer or to any external server.</p>
+
+  <h3><code>storage</code></h3>
+  <p><strong><code>chrome.storage.session</code></strong> is used for temporary browser-session information such as:</p>
+  <ul>
+    <li>per-tab Freshservice URL context;</li>
+    <li>temporary portal detection context;</li>
+    <li>authentication and restoration state;</li>
+    <li>restoration timestamps and status;</li>
+    <li>a small local debug log containing only extension events.</li>
+  </ul>
+
+  <p><strong><code>chrome.storage.local</code></strong> is used for persistent extension configuration and non-content statistics such as:</p>
+  <ul>
+    <li>detected or manually added Freshservice portal origins and hostnames;</li>
+    <li>enabled or disabled portal state;</li>
+    <li>portal detection source and timestamps;</li>
+    <li>restoration counters;</li>
+    <li>timestamp and origin of the latest successful restoration.</li>
+  </ul>
+  <p>Full Freshservice ticket or page paths are not persisted to <code>chrome.storage.local</code>.</p>
+
+  <h2>Data handled by the extension</h2>
+  <p>The extension processes Freshservice portal hostnames and Freshservice page URLs required to provide navigation restoration. This information remains in the local browser storage described above.</p>
+
+  <h2>Data the extension does not access</h2>
+  <ul>
+    <li>cookies;</li>
+    <li>passwords;</li>
+    <li>form contents;</li>
+    <li>Freshservice ticket contents;</li>
+    <li>request or response bodies;</li>
+    <li>Entra ID, SAML, OAuth or Freshworks tokens;</li>
+    <li>identity-provider credentials.</li>
+  </ul>
+
+  <h2>Network and data sharing</h2>
+  <p>The extension performs no external network request of its own.</p>
+  <p>No extension data is sold, transferred, synchronized to an external service, shared with advertisers, or used for creditworthiness or lending purposes.</p>
+  <p>When restoration is required, the extension uses the browser extension API to navigate the current tab back to a Freshservice URL that was already observed in that same browser context.</p>
+
+  <h2>Automatic portal detection</h2>
+  <p>Standard <code>*.freshservice.com</code> portals can be recognized by hostname. Custom domains are confirmed through Freshservice-specific route signatures or FreshID authentication behavior. Before confirmation, a possible application URL may be held temporarily in session memory for the current tab so it can be recovered if the same origin subsequently confirms itself as Freshservice.</p>
+
+  <h2>Retention</h2>
+  <p>Session-specific page context is temporary and is kept in browser session storage. Persistent storage is limited to configured/detected portal identifiers and restoration statistics required for extension operation.</p>
+
+  <h2>Trademark notice</h2>
+  <p>Freshservice and Freshworks are trademarks of Freshworks Inc. Context Restorer for Freshservice is an independent utility and is not affiliated with, sponsored by, or endorsed by Freshworks Inc.</p>
+
+  <h2>Developer</h2>
+  <p>Developed by Leo Naloufi.</p>
+</main>
+</body>
+</html>
