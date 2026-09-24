@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Context Restorer for Freshservice</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header class="brand">
+      <img src="icons/icon48.png" alt="" width="42" height="42">
+      <div>
+        <h1>Context Restorer</h1>
+        <p>for Freshservice</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="section-title">Current tab</div>
+      <div class="status-grid">
+        <span>Portal</span><strong id="portal">—</strong>
+        <span>Phase</span><strong id="phase">—</strong>
+        <span>Restore pending</span><strong id="pending">—</strong>
+        <span>Last restore</span><strong id="lastRestore">—</strong>
+        <span>Session restores</span><strong id="sessionCount">0</strong>
+      </div>
+
+      <label>Last useful URL</label>
+      <div id="lastUrl" class="url-box">No URL saved.</div>
+
+      <div class="buttons">
+        <button id="restore">Restore now</button>
+        <button id="clearState" class="secondary">Clear tab state</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-row">
+        <div>
+          <div class="section-title">Freshservice portals</div>
+          <div class="muted">Detected automatically. Manual entry remains available.</div>
+        </div>
+        <span id="portalCount" class="pill">0</span>
+      </div>
+
+      <div id="portalList" class="portal-list"></div>
+
+      <form id="addPortalForm" class="add-form">
+        <input id="portalInput" type="text" placeholder="https://support.company.com" autocomplete="off">
+        <button type="submit">Add</button>
+      </form>
+    </section>
+
+    <section class="card compact">
+      <div class="section-title">Automatic restoration</div>
+      <div class="stats-line"><strong id="totalRestores">0</strong><span>successful automatic restores</span></div>
+      <div id="globalLastRestore" class="muted">No automatic restore recorded yet.</div>
+    </section>
+
+    <details class="card details-card">
+      <summary>Why this extension?</summary>
+      <p>Freshservice reauthentication can sometimes return the user to the home page or dashboard instead of the page that was open before the session expired. This extension keeps the page context in the browser and restores it after authentication succeeds.</p>
+      <p>It does not extend the session, bypass authentication, read credentials, or modify the SSO flow.</p>
+    </details>
+
+    <details class="card details-card">
+      <summary>Recent debug</summary>
+      <pre id="debug">—</pre>
+      <button id="clearLog" class="secondary small">Clear debug</button>
+    </details>
+
+    <p id="message" class="message"></p>
+    <footer>Developed by <strong>Leo Naloufi</strong> · v0.2.0</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
