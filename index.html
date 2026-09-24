@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Context Restorer for Freshservice</title>
+  <meta name="description" content="Restore your Freshservice page context after session expiry and reauthentication.">
+  <style>
+    :root{--bg:#f5f9ff;--card:#fff;--text:#0b1f44;--muted:#65728a;--blue:#1768f2;--cyan:#20c7ec;--line:#dce6f4}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:linear-gradient(180deg,#eef8ff 0,#fff 58%)}
+    main{max-width:940px;margin:0 auto;padding:72px 24px 90px}
+    .hero{display:grid;grid-template-columns:118px 1fr;gap:28px;align-items:center}
+    .mark{width:118px;height:118px;border-radius:28px;background:linear-gradient(145deg,#25d8ee,#146cf3 62%,#0738c8);box-shadow:0 16px 40px rgba(23,104,242,.22);display:grid;place-items:center;position:relative}
+    .window{width:70px;height:58px;border-radius:12px;background:#fff;box-shadow:0 8px 18px rgba(0,39,120,.18);position:relative}
+    .window:before{content:"";position:absolute;left:10px;top:10px;width:8px;height:8px;border-radius:50%;background:#1768f2;box-shadow:13px 0 #20c7ec,26px 0 #34c759}
+    .window:after{content:"↶";position:absolute;right:-18px;bottom:-22px;width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#1ccbe9,#1768f2);color:#fff;font-size:34px;font-weight:700;border:5px solid #fff}
+    h1{font-size:46px;line-height:1.02;margin:0 0 12px;letter-spacing:-1.5px}
+    .sub{font-size:22px;color:var(--muted);margin:0;line-height:1.4}
+    .card{margin-top:34px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;box-shadow:0 10px 30px rgba(31,72,132,.06)}
+    h2{margin:0 0 14px;font-size:24px}.card p{line-height:1.65}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}
+    .feature{background:#f8fbff;border:1px solid var(--line);border-radius:14px;padding:18px}.feature strong{display:block;margin-bottom:7px}.feature span{font-size:14px;line-height:1.5;color:var(--muted)}
+    a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+    footer{margin-top:34px;color:var(--muted);font-size:14px;line-height:1.5}
+    @media(max-width:700px){main{padding-top:42px}.hero{grid-template-columns:1fr}.mark{width:88px;height:88px}.window{transform:scale(.75)}h1{font-size:35px}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="mark" aria-label="Context Restorer icon"><div class="window"></div></div>
+    <div>
+      <h1>Context Restorer<br>for Freshservice</h1>
+      <p class="sub">Return to the page you were using after reauthentication.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Why this extension exists</h2>
+    <p>Freshservice reauthentication can sometimes return a user to a generic home page or dashboard instead of the page that was open before session expiry. Context Restorer preserves that navigation context locally in the browser and restores the previous Freshservice page once authentication succeeds.</p>
+    <div class="grid">
+      <div class="feature"><strong>Automatic</strong><span>Detects compatible Freshservice portals and restores page context when required.</span></div>
+      <div class="feature"><strong>Multi-portal</strong><span>Supports standard Freshservice domains and custom company portal domains.</span></div>
+      <div class="feature"><strong>Lightweight</strong><span>Does not extend sessions, read credentials, or alter the SSO authentication flow.</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Privacy and security</h2>
+    <p>The extension processes Freshservice navigation context locally in the browser. It does not transmit browsing data to the developer or to third parties and performs no external network requests of its own.</p>
+    <p><a href="privacy.html">Read the Privacy and Security Notice →</a></p>
+  </section>
+
+  <footer>
+    Developed by <strong>Leo Naloufi</strong>.<br>
+    Freshservice and Freshworks are trademarks of Freshworks Inc. This extension is an independent utility and is not affiliated with, sponsored by, or endorsed by Freshworks Inc.
+  </footer>
+</main>
+</body>
+</html>
