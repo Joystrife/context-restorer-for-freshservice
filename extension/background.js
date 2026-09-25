@@ -312,6 +312,27 @@ async function clearPending(state, reason, currentUrl) {
   await appendDebug(state.tabId, "pending_cleared", currentUrl, reason);
 }
 
+async function waitForAuthentication(state, rawUrl, reason) {
+  if (state.restoringUrl || state.phase === "restoring") {
+    state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
+    state.lastRestoreStatus = "waiting_for_auth";
+    await appendDebug(state.tabId, "restore_requires_auth", rawUrl, {
+      reason,
+      saved: state.lastUsefulUrl
+    });
+  }
+
+  state.phase = "waiting_for_return";
+  state.lastObservedUrl = rawUrl;
+  state.lastReason = reason;
+  await putState(state);
+  await appendDebug(state.tabId, "waiting", rawUrl, reason);
+}
+
 async function restoreTab(state, reason, force = false) {
   if (!state.lastUsefulUrl || !state.portalOrigin) return { ok: false, reason: "no_saved_url" };
 
@@ -377,11 +398,7 @@ async function handleBeforeNavigate(details) {
 
   if (!state.pendingRestore) return;
   if (c.isAuthSurface || c.isIntermediate) {
-    state.phase = "waiting_for_return";
-    state.lastObservedUrl = details.url;
-    state.lastReason = "auth_navigation";
-    await putState(state);
-    await appendDebug(details.tabId, "auth_navigation", details.url);
+    await waitForAuthentication(state, details.url, "auth_navigation");
   }
 }
 
@@ -414,29 +431,38 @@ async function handlePortalNavigation(details, sourceEvent) {
 
   state.lastObservedUrl = details.url;
 
-  const isPendingHomeReload =
+  const recoveryPath = c.url?.pathname || "";
+  const isPendingRecoveryReload =
     sourceEvent === "committed" &&
     details.transitionType === "reload" &&
-    (c.url?.pathname === "/support/home" || c.url?.pathname === "/support/home/");
+    (
+      recoveryPath === "/support/home" ||
+      recoveryPath === "/support/home/" ||
+      recoveryPath === "/support/login" ||
+      recoveryPath.startsWith("/support/login/") ||
+      recoveryPath === "/" ||
+      recoveryPath === "/helpdesk/dashboard" ||
+      recoveryPath.startsWith("/helpdesk/dashboard/")
+    );
 
-  if (isPendingHomeReload) {
-    // A manual reload of the fallback page is an explicit request to try the
-    // saved context again. If auth is still unavailable, FreshID will be
-    // reached and markSessionLost() keeps the context armed.
+  if (isPendingRecoveryReload) {
+    // F5, browser "Reload all tabs", and third-party reload extensions all
+    // arrive here as per-tab reloads. Each tab retries its own saved context.
     state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
     state.phase = "waiting_for_return";
-    state.lastReason = "pending_home_reload";
+    state.lastReason = "pending_recovery_reload";
     await putState(state);
-    await appendDebug(details.tabId, "pending_home_reload", details.url, { saved: state.lastUsefulUrl });
-    await restoreTab(state, "pending_home_reload");
+    await appendDebug(details.tabId, "pending_recovery_reload", details.url, { saved: state.lastUsefulUrl });
+    await restoreTab(state, "pending_recovery_reload");
     return;
   }
 
   if (c.isAuthSurface || c.isIntermediate) {
-    state.phase = "waiting_for_return";
-    state.lastReason = sourceEvent;
-    await putState(state);
-    await appendDebug(details.tabId, "waiting", details.url, sourceEvent);
+    await waitForAuthentication(state, details.url, sourceEvent);
     return;
   }
 
