@@ -10,6 +10,8 @@
 - Reloading `/support/home` while a restore is pending now retries the saved Freshservice page.
 - If that retry reaches FreshID because authentication is still unavailable, the saved context remains armed for the next login instead of being blocked.
 - Duplicate restore events are ignored while a restore is already in progress.
+- Browser-wide or third-party **Reload All Tabs** actions are handled tab by tab: every pending Freshservice tab retries its own saved context independently.
+- Clicking Freshservice **Login** while a restore is pending preserves the saved context through authentication; if Freshservice returns to a dashboard/home fallback, the tab is restored to its saved page.
 
 
 ## v0.2.0 — Public beta
