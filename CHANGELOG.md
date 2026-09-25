@@ -7,6 +7,9 @@
 - Removed the 30-minute internal expiration applied to a pending restoration after Freshservice session loss.
 - A saved Freshservice page now remains eligible for restoration for the lifetime of the browser extension session, including long laptop sleep/idle periods, until the tab is closed, the browser restarts, the extension reloads/updates, the portal is disabled, or the state is cleared.
 - Prevents a delayed reauthentication from replacing the saved ticket context with the Freshservice dashboard.
+- Reloading `/support/home` while a restore is pending now retries the saved Freshservice page.
+- If that retry reaches FreshID because authentication is still unavailable, the saved context remains armed for the next login instead of being blocked.
+- Duplicate restore events are ignored while a restore is already in progress.
 
 
 ## v0.2.0 — Public beta
