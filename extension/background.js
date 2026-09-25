@@ -263,7 +263,17 @@ async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
   let state = await getState(tabId);
   if (state.portalOrigin !== portalOrigin) state = await promoteCandidate(state, portalOrigin);
 
-  if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
+  if (state.pendingRestore && state.phase === "restoring") {
+    // A restore attempt reached FreshID again: authentication is still unavailable.
+    // Keep the saved context armed instead of treating this as a failed/looping restore.
+    state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
+    state.lastRestoreStatus = "waiting_for_auth";
+    await appendDebug(tabId, "restore_requires_auth", rawUrl, { saved: state.lastUsefulUrl });
+  } else if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
     state.phase = "restore_blocked";
     state.lastObservedUrl = rawUrl;
     state.lastReason = "logout_after_restore";
@@ -304,6 +314,10 @@ async function clearPending(state, reason, currentUrl) {
 
 async function restoreTab(state, reason, force = false) {
   if (!state.lastUsefulUrl || !state.portalOrigin) return { ok: false, reason: "no_saved_url" };
+
+  if (state.phase === "restoring" && state.restoringUrl) {
+    return { ok: false, reason: "restore_in_progress" };
+  }
 
   const portal = await getPortal(state.portalOrigin);
   if (!portal || !portal.enabled) return { ok: false, reason: "portal_disabled" };
@@ -399,6 +413,24 @@ async function handlePortalNavigation(details, sourceEvent) {
   }
 
   state.lastObservedUrl = details.url;
+
+  const isPendingHomeReload =
+    sourceEvent === "committed" &&
+    details.transitionType === "reload" &&
+    (c.url?.pathname === "/support/home" || c.url?.pathname === "/support/home/");
+
+  if (isPendingHomeReload) {
+    // A manual reload of the fallback page is an explicit request to try the
+    // saved context again. If auth is still unavailable, FreshID will be
+    // reached and markSessionLost() keeps the context armed.
+    state.restoreAttempts = 0;
+    state.phase = "waiting_for_return";
+    state.lastReason = "pending_home_reload";
+    await putState(state);
+    await appendDebug(details.tabId, "pending_home_reload", details.url, { saved: state.lastUsefulUrl });
+    await restoreTab(state, "pending_home_reload");
+    return;
+  }
 
   if (c.isAuthSurface || c.isIntermediate) {
     state.phase = "waiting_for_return";
