@@ -3,12 +3,11 @@
 importScripts("rules.js");
 
 const R = globalThis.ContextRestorerRules;
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const STATE_PREFIX = "tabState:";
 const DEBUG_KEY = "debugLog";
 const PORTALS_KEY = "portalRegistry";
 const STATS_KEY = "restoreStats";
-const PENDING_TTL_MS = 30 * 60 * 1000;
 const MAX_RESTORE_ATTEMPTS = 1;
 const DEBUG_LIMIT = 160;
 
@@ -184,25 +183,6 @@ async function recordSuccessfulRestore(state) {
   });
 }
 
-function pendingExpired(state) {
-  return Boolean(state.pendingRestore && state.pendingSince && Date.now() - state.pendingSince > PENDING_TTL_MS);
-}
-
-async function expirePendingIfNeeded(state) {
-  if (!pendingExpired(state)) return state;
-  state.pendingRestore = false;
-  state.pendingSince = null;
-  state.restoreAttempts = 0;
-  state.restoringUrl = null;
-  state.restoreMode = null;
-  state.restoreReason = null;
-  state.restoreRequestedAt = null;
-  state.phase = "normal";
-  state.lastReason = "pending_timeout";
-  await putState(state);
-  await appendDebug(state.tabId, "pending_timeout", state.lastObservedUrl);
-  return state;
-}
 
 async function saveCandidateUrl(tabId, rawUrl) {
   const inspected = R.inspectUnknownUrl(rawUrl);
@@ -282,9 +262,18 @@ async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
 async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
   let state = await getState(tabId);
   if (state.portalOrigin !== portalOrigin) state = await promoteCandidate(state, portalOrigin);
-  state = await expirePendingIfNeeded(state);
 
-  if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
+  if (state.pendingRestore && state.phase === "restoring") {
+    // A restore attempt reached FreshID again: authentication is still unavailable.
+    // Keep the saved context armed instead of treating this as a failed/looping restore.
+    state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
+    state.lastRestoreStatus = "waiting_for_auth";
+    await appendDebug(tabId, "restore_requires_auth", rawUrl, { saved: state.lastUsefulUrl });
+  } else if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
     state.phase = "restore_blocked";
     state.lastObservedUrl = rawUrl;
     state.lastReason = "logout_after_restore";
@@ -323,8 +312,33 @@ async function clearPending(state, reason, currentUrl) {
   await appendDebug(state.tabId, "pending_cleared", currentUrl, reason);
 }
 
+async function waitForAuthentication(state, rawUrl, reason) {
+  if (state.restoringUrl || state.phase === "restoring") {
+    state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
+    state.lastRestoreStatus = "waiting_for_auth";
+    await appendDebug(state.tabId, "restore_requires_auth", rawUrl, {
+      reason,
+      saved: state.lastUsefulUrl
+    });
+  }
+
+  state.phase = "waiting_for_return";
+  state.lastObservedUrl = rawUrl;
+  state.lastReason = reason;
+  await putState(state);
+  await appendDebug(state.tabId, "waiting", rawUrl, reason);
+}
+
 async function restoreTab(state, reason, force = false) {
   if (!state.lastUsefulUrl || !state.portalOrigin) return { ok: false, reason: "no_saved_url" };
+
+  if (state.phase === "restoring" && state.restoringUrl) {
+    return { ok: false, reason: "restore_in_progress" };
+  }
 
   const portal = await getPortal(state.portalOrigin);
   if (!portal || !portal.enabled) return { ok: false, reason: "portal_disabled" };
@@ -384,11 +398,7 @@ async function handleBeforeNavigate(details) {
 
   if (!state.pendingRestore) return;
   if (c.isAuthSurface || c.isIntermediate) {
-    state.phase = "waiting_for_return";
-    state.lastObservedUrl = details.url;
-    state.lastReason = "auth_navigation";
-    await putState(state);
-    await appendDebug(details.tabId, "auth_navigation", details.url);
+    await waitForAuthentication(state, details.url, "auth_navigation");
   }
 }
 
@@ -413,7 +423,6 @@ async function handlePortalNavigation(details, sourceEvent) {
 
   let state = await getState(details.tabId);
   if (state.portalOrigin !== portal.origin) state = await promoteCandidate(state, portal.origin);
-  state = await expirePendingIfNeeded(state);
 
   if (!state.pendingRestore) {
     if (c.isUseful) await saveUsefulUrl(details.tabId, details.url, portal.origin, sourceEvent);
@@ -422,11 +431,38 @@ async function handlePortalNavigation(details, sourceEvent) {
 
   state.lastObservedUrl = details.url;
 
-  if (c.isAuthSurface || c.isIntermediate) {
+  const recoveryPath = c.url?.pathname || "";
+  const isPendingRecoveryReload =
+    sourceEvent === "committed" &&
+    details.transitionType === "reload" &&
+    (
+      recoveryPath === "/support/home" ||
+      recoveryPath === "/support/home/" ||
+      recoveryPath === "/support/login" ||
+      recoveryPath.startsWith("/support/login/") ||
+      recoveryPath === "/" ||
+      recoveryPath === "/helpdesk/dashboard" ||
+      recoveryPath.startsWith("/helpdesk/dashboard/")
+    );
+
+  if (isPendingRecoveryReload) {
+    // F5, browser "Reload all tabs", and third-party reload extensions all
+    // arrive here as per-tab reloads. Each tab retries its own saved context.
+    state.restoreAttempts = 0;
+    state.restoringUrl = null;
+    state.restoreMode = null;
+    state.restoreReason = null;
+    state.restoreRequestedAt = null;
     state.phase = "waiting_for_return";
-    state.lastReason = sourceEvent;
+    state.lastReason = "pending_recovery_reload";
     await putState(state);
-    await appendDebug(details.tabId, "waiting", details.url, sourceEvent);
+    await appendDebug(details.tabId, "pending_recovery_reload", details.url, { saved: state.lastUsefulUrl });
+    await restoreTab(state, "pending_recovery_reload");
+    return;
+  }
+
+  if (c.isAuthSurface || c.isIntermediate) {
+    await waitForAuthentication(state, details.url, sourceEvent);
     return;
   }
 
