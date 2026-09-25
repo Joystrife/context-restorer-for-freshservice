@@ -527,6 +527,26 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") return;
 
+  if (message.type === "inspect-current-tab" && Number.isInteger(message.tabId)) {
+    void (async () => {
+      try {
+        const frame = await chrome.webNavigation.getFrame({ tabId: message.tabId, frameId: 0 });
+        if (!frame?.url || !R.parseHttpsUrl(frame.url)) {
+          sendResponse({ ok: false, reason: "no_https_frame" });
+          return;
+        }
+        await handlePortalNavigation(
+          { tabId: message.tabId, frameId: 0, url: frame.url },
+          "popup_inspection"
+        );
+        sendResponse({ ok: true, url: frame.url });
+      } catch (error) {
+        sendResponse({ ok: false, reason: String(error?.message || error) });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === "restore-now" && Number.isInteger(message.tabId)) {
     void (async () => sendResponse(await restoreTab(await getState(message.tabId), "manual_restore", true)))();
     return true;
@@ -580,50 +600,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-async function bootstrapOpenTabs() {
-  let tabs = [];
-  try {
-    tabs = await chrome.tabs.query({});
-  } catch (error) {
-    await appendDebug(-1, "bootstrap_tabs_error", null, String(error));
-    return;
-  }
-
-  const frames = [];
-  for (const tab of tabs) {
-    if (!Number.isInteger(tab.id)) continue;
-    try {
-      const frame = await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: 0 });
-      if (frame?.url && R.parseHttpsUrl(frame.url)) frames.push({ tabId: tab.id, url: frame.url });
-    } catch {
-      // Restricted/internal tabs are expected and are ignored.
-    }
-  }
-
-  // First pass: discover Freshservice origins from high-confidence routes.
-  for (const item of frames) {
-    try {
-      await resolvePortalForNavigation(item.tabId, item.url);
-    } catch (error) {
-      await appendDebug(item.tabId, "bootstrap_discovery_error", item.url, String(error));
-    }
-  }
-
-  // Second pass: once an origin is known, remember every useful page already open
-  // on that Freshservice portal, including admin/workspace pages.
-  for (const item of frames) {
-    try {
-      await handlePortalNavigation(
-        { tabId: item.tabId, frameId: 0, url: item.url },
-        "bootstrap"
-      );
-    } catch (error) {
-      await appendDebug(item.tabId, "bootstrap_handler_error", item.url, String(error));
-    }
-  }
-
-  await appendDebug(-1, "bootstrap_complete", null, { inspectedTabs: frames.length });
-}
-
 void appendDebug(-1, "service_worker_started", null, { version: VERSION });
-void bootstrapOpenTabs();
