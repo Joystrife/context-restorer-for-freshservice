@@ -1,6 +1,6 @@
 # Context Restorer for Freshservice
 
-**Current version: v0.2.0 (public beta)**
+**Current development version: v0.2.1 (pending restoration fix)**
 
 Context Restorer for Freshservice is a lightweight browser extension that restores the Freshservice page a user was working on after session expiry and reauthentication.
 
@@ -28,7 +28,7 @@ The Chrome/Chromium extension source for the current version is available in:
 
 [`/extension`](./extension)
 
-The source corresponds to **v0.2.0**, the version prepared for Chrome Web Store submission.
+The `main` branch represents the submitted v0.2.0 baseline. The `fix/pending-timeout-v0.2.1` branch contains the v0.2.1 pending-restoration fix, including long-idle recovery and manual reload recovery from `/support/home`.
 
 ## Installation for development
 
