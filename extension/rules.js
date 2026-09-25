@@ -59,6 +59,7 @@
 
   function isHighConfidenceFreshservicePath(pathname) {
     return (
+      /^\/ws\/\d+(?:\/|$)/.test(pathname) ||
       /^\/a\/tickets\/\d+(?:\/|$)/.test(pathname) ||
       /^\/a\/problems\/\d+(?:\/|$)/.test(pathname) ||
       /^\/a\/changes\/\d+(?:\/|$)/.test(pathname) ||

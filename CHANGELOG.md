@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.2 — Workspace and existing-tab detection
+
+### Fixed
+
+- Freshservice workspace routes such as `/ws/<workspace-id>/admin/...` are now recognized as high-confidence Freshservice routes on custom portal domains.
+- Admin and workspace pages can therefore be saved as the current tab context, not only ticket-oriented pages.
+- On extension/service-worker startup, already-open browser tabs are inspected through `webNavigation` in two passes: first to discover Freshservice portal origins, then to remember every useful page already open on those portals.
+- No additional browser permission is required.
+
+
 ## v0.2.1 — Pending restoration fix
 
 ### Fixed
