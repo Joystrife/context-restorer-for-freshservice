@@ -28,7 +28,7 @@ The Chrome/Chromium extension source for the current version is available in:
 
 [`/extension`](./extension)
 
-The `main` branch contains **v0.2.2**, including long-idle recovery, Freshservice Login recovery, F5 recovery, per-tab recovery with **Reload All Tabs**, Freshservice workspace/admin route detection, and startup detection for already-open tabs.
+The `main` branch contains **v0.2.2**, including long-idle recovery, Freshservice Login recovery, F5 recovery, per-tab recovery with **Reload All Tabs**, Freshservice workspace/admin route detection, and current-tab detection when the popup is opened.
 
 ## Installation for development
 
