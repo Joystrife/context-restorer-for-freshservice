@@ -94,6 +94,16 @@ async function refresh() {
   }
 
   currentTabId = tab.id;
+
+  // Inspect the currently displayed page so a Freshservice portal can be
+  // detected immediately even when the tab was already open before the
+  // extension was installed or reloaded.
+  try {
+    await chrome.runtime.sendMessage({ type: "inspect-current-tab", tabId: tab.id });
+  } catch {
+    // The popup can still render previously stored state if inspection fails.
+  }
+
   const key = stateKey(tab.id);
   const [sessionData, localData] = await Promise.all([
     chrome.storage.session.get([key, DEBUG_KEY]),
