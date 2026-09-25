@@ -3,12 +3,11 @@
 importScripts("rules.js");
 
 const R = globalThis.ContextRestorerRules;
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const STATE_PREFIX = "tabState:";
 const DEBUG_KEY = "debugLog";
 const PORTALS_KEY = "portalRegistry";
 const STATS_KEY = "restoreStats";
-const PENDING_TTL_MS = 30 * 60 * 1000;
 const MAX_RESTORE_ATTEMPTS = 1;
 const DEBUG_LIMIT = 160;
 
@@ -184,25 +183,6 @@ async function recordSuccessfulRestore(state) {
   });
 }
 
-function pendingExpired(state) {
-  return Boolean(state.pendingRestore && state.pendingSince && Date.now() - state.pendingSince > PENDING_TTL_MS);
-}
-
-async function expirePendingIfNeeded(state) {
-  if (!pendingExpired(state)) return state;
-  state.pendingRestore = false;
-  state.pendingSince = null;
-  state.restoreAttempts = 0;
-  state.restoringUrl = null;
-  state.restoreMode = null;
-  state.restoreReason = null;
-  state.restoreRequestedAt = null;
-  state.phase = "normal";
-  state.lastReason = "pending_timeout";
-  await putState(state);
-  await appendDebug(state.tabId, "pending_timeout", state.lastObservedUrl);
-  return state;
-}
 
 async function saveCandidateUrl(tabId, rawUrl) {
   const inspected = R.inspectUnknownUrl(rawUrl);
@@ -282,7 +262,6 @@ async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
 async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
   let state = await getState(tabId);
   if (state.portalOrigin !== portalOrigin) state = await promoteCandidate(state, portalOrigin);
-  state = await expirePendingIfNeeded(state);
 
   if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
     state.phase = "restore_blocked";
@@ -413,7 +392,6 @@ async function handlePortalNavigation(details, sourceEvent) {
 
   let state = await getState(details.tabId);
   if (state.portalOrigin !== portal.origin) state = await promoteCandidate(state, portal.origin);
-  state = await expirePendingIfNeeded(state);
 
   if (!state.pendingRestore) {
     if (c.isUseful) await saveUsefulUrl(details.tabId, details.url, portal.origin, sourceEvent);
