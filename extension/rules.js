@@ -27,6 +27,10 @@
     return host.endsWith(FRESHSERVICE_SUFFIX) && host.length > FRESHSERVICE_SUFFIX.length;
   }
 
+  function isFreshIdPath(pathname) {
+    return hasPrefix(pathname, "/freshid");
+  }
+
   function isStrongAuthPath(pathname) {
     return hasPrefix(pathname, "/freshid/logout") || hasPrefix(pathname, "/freshid/authorize_callback");
   }
@@ -37,7 +41,7 @@
 
   function isAuthSurfacePath(pathname) {
     return (
-      isStrongAuthPath(pathname) ||
+      isFreshIdPath(pathname) ||
       hasPrefix(pathname, "/support/login") ||
       pathname === "/support/home" ||
       pathname === "/support/home/"
@@ -45,7 +49,12 @@
   }
 
   function isIntermediatePath(pathname) {
-    return pathname === "/" || hasPrefix(pathname, "/helpdesk/dashboard");
+    return (
+      pathname === "/" ||
+      hasPrefix(pathname, "/helpdesk/dashboard") ||
+      pathname === "/a/dashboard" ||
+      pathname === "/a/dashboard/"
+    );
   }
 
   function isFallbackAfterAuthPath(pathname) {
@@ -99,6 +108,8 @@
     }
 
     const p = url.pathname;
+    const isTechnicalContext = isAuthSurfacePath(p) || isIntermediatePath(p);
+
     return {
       url,
       origin: url.origin,
@@ -111,7 +122,7 @@
         p === "/support/home/" ||
         hasPrefix(p, "/helpdesk/dashboard"),
       isHighConfidenceApp: isHighConfidenceFreshservicePath(p),
-      isCandidateApp: isCandidateFreshservicePath(p)
+      isCandidateApp: isCandidateFreshservicePath(p) && !isTechnicalContext
     };
   }
 
@@ -173,6 +184,7 @@
     parseHttpsUrl,
     normalizeOrigin,
     isStandardFreshserviceHost,
+    isFreshIdPath,
     isStrongAuthPath,
     isLogoutPath,
     isAuthSurfacePath,
