@@ -38,6 +38,8 @@ function blankState(tabId) {
     restoreRequestedAt: null,
     lastRestoreAttemptAt: null,
     automaticAttemptCount: 0,
+    recoveryAttemptMode: null,
+    recoveryAttemptReason: null,
     lastRestoreSuccessAt: null,
     lastRestoreStatus: null,
     lastRestoreUrl: null,
@@ -159,8 +161,12 @@ async function getStats() {
 
 async function recordSuccessfulRestore(state) {
   const now = Date.now();
-  const attemptCount = (state.automaticAttemptCount || 0) + (state.restoreMode === "manual" ? 1 : 0);
+  const completedMode = state.restoreMode || state.recoveryAttemptMode || "automatic";
+  const completedReason = state.restoreReason || state.recoveryAttemptReason || "context_recovered";
+  const attemptCount = (state.automaticAttemptCount || 0) + (completedMode === "manual" ? 1 : 0);
 
+  state.restoreMode = completedMode;
+  state.restoreReason = completedReason;
   state.lastRestoreSuccessAt = now;
   state.lastRestoreStatus = "success";
   state.lastRestoreUrl = state.lastUsefulUrl;
@@ -276,6 +282,8 @@ async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
   state.restoreRequestedAt = null;
   state.lastRestoreAttemptAt = null;
   state.automaticAttemptCount = 0;
+  state.recoveryAttemptMode = null;
+  state.recoveryAttemptReason = null;
   state.lastReason = reason;
   await putState(state);
   await updatePortal(portalOrigin, { lastSeenAt: Date.now() });
@@ -338,6 +346,8 @@ async function clearPending(state, reason, currentUrl) {
   state.restoreRequestedAt = null;
   state.lastRestoreAttemptAt = null;
   state.automaticAttemptCount = 0;
+  state.recoveryAttemptMode = null;
+  state.recoveryAttemptReason = null;
   state.phase = "normal";
   state.lastObservedUrl = currentUrl || state.lastObservedUrl;
   state.lastReason = reason;
@@ -402,6 +412,8 @@ async function restoreTab(state, reason, force = false) {
   state.restoreReason = reason;
   state.restoreRequestedAt = Date.now();
   state.lastRestoreAttemptAt = Date.now();
+  state.recoveryAttemptMode = force ? "manual" : "automatic";
+  state.recoveryAttemptReason = reason;
   state.lastRestoreStatus = "pending";
   state.lastReason = reason;
   if (!force) state.automaticAttemptCount = (state.automaticAttemptCount || 0) + 1;
@@ -496,7 +508,10 @@ async function handlePortalNavigation(details, sourceEvent) {
   if (c.isUseful && R.isExactSameDestination(details.url, state.lastUsefulUrl)) {
     state.lastUsefulUrl = R.canonical(details.url, portal.origin);
     state.lastUsefulAt = Date.now();
-    if (state.restoringUrl && R.isExactSameDestination(details.url, state.restoringUrl)) {
+    if (
+      (state.restoringUrl && R.isExactSameDestination(details.url, state.restoringUrl)) ||
+      state.recoveryAttemptMode
+    ) {
       await recordSuccessfulRestore(state);
       await clearPending(state, "extension_restore_success", details.url);
     } else {
