@@ -1,6 +1,6 @@
 # Context Restorer for Freshservice
 
-**Current version: v0.2.2 (public beta)**
+**Current version: v0.2.3 (public beta)**
 
 Context Restorer for Freshservice is a lightweight browser extension that restores the Freshservice page a user was working on after session expiry and reauthentication.
 
@@ -14,7 +14,9 @@ Freshservice reauthentication can sometimes return users to a generic home page 
 - Support for multiple Freshservice portals and custom domains
 - Per-tab context restoration
 - Automatic restoration after FreshID / SSO reauthentication
-- Manual restore fallback
+- Automatic recovery from Freshservice home/login/dashboard waiting states
+- 2-second event-driven retry cooldown without background polling
+- Manual **Restore now** fallback
 - Portal enable/disable controls
 - Local restoration counters and status
 - No session extension or authentication bypass
@@ -28,7 +30,7 @@ The Chrome/Chromium extension source for the current version is available in:
 
 [`/extension`](./extension)
 
-The `main` branch contains **v0.2.2**, including long-idle recovery, Freshservice Login recovery, F5 recovery, per-tab recovery with **Reload All Tabs**, Freshservice workspace/admin route detection, and current-tab detection when the popup is opened.
+The `main` branch contains **v0.2.3**, including long-idle recovery, automatic Freshservice Login/home recovery, F5 recovery, per-tab recovery with **Reload All Tabs**, Freshservice workspace/admin route detection, current-tab detection when the popup is opened, and protection against saving technical authentication/fallback pages as restore destinations.
 
 ## Installation for development
 
