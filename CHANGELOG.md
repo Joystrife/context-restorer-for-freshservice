@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.3 — Fully automatic authentication recovery
+
+### Fixed
+
+- Pending Freshservice contexts now restore automatically from authentication and fallback waiting states without requiring the user to click **Restore now**, refresh the page, or use the browser Back button.
+- `/support/home`, `/support/login`, `/freshid/...`, `/`, `/a/dashboard`, and `/helpdesk/dashboard` are treated as technical/authentication/fallback surfaces and are never stored as the useful restore destination.
+- Freshservice home/login/dashboard recovery surfaces now actively retry the saved page when a restore is pending.
+- Automatic retry uses a 2-second cooldown and remains event-driven; the extension does not poll in the background.
+- Explicit F5 / Reload All Tabs remains an immediate retry trigger for each pending tab.
+- If an automatic restore reaches authentication again, the saved context remains armed until authentication succeeds.
+- Redirects to Freshservice authentication surfaces can arm recovery even when a session-expiry path does not expose `/freshid/logout`.
+- Automatic retry attempts are kept quiet in the debug log. The log focuses on meaningful state changes, successful restores, manual restore requests, and real failures.
+- Successful restore debug entries include the number of attempts used during the recovery cycle.
+
+### Behavior
+
+- **Restore now** remains available as a manual fallback. It does not bypass SSO; it simply forces an immediate navigation to the saved Freshservice page and lets the normal authentication flow run if required.
+- Native Freshservice deep-link restoration is still accepted: when Freshservice itself returns directly to the saved page, the pending context is cleared without an unnecessary second navigation.
+- Functional Freshservice pages such as `/ws/<workspace-id>/admin/home` remain valid restore destinations.
+
 ## v0.2.2 — Workspace and existing-tab detection
 
 ### Fixed
