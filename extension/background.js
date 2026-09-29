@@ -40,6 +40,7 @@ function blankState(tabId) {
     automaticAttemptCount: 0,
     recoveryAttemptMode: null,
     recoveryAttemptReason: null,
+    waitingDebugLogged: false,
     lastRestoreSuccessAt: null,
     lastRestoreStatus: null,
     lastRestoreUrl: null,
@@ -284,6 +285,7 @@ async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
   state.automaticAttemptCount = 0;
   state.recoveryAttemptMode = null;
   state.recoveryAttemptReason = null;
+  state.waitingDebugLogged = false;
   state.lastReason = reason;
   await putState(state);
   await updatePortal(portalOrigin, { lastSeenAt: Date.now() });
@@ -322,6 +324,7 @@ async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
 
   state.pendingRestore = true;
   state.pendingSince = state.pendingSince || Date.now();
+  if (!wasPending) state.waitingDebugLogged = false;
   state.phase = "auth_lost";
   state.lastObservedUrl = rawUrl;
   state.lastReason = reason;
@@ -348,6 +351,7 @@ async function clearPending(state, reason, currentUrl) {
   state.automaticAttemptCount = 0;
   state.recoveryAttemptMode = null;
   state.recoveryAttemptReason = null;
+  state.waitingDebugLogged = false;
   state.phase = "normal";
   state.lastObservedUrl = currentUrl || state.lastObservedUrl;
   state.lastReason = reason;
@@ -356,7 +360,7 @@ async function clearPending(state, reason, currentUrl) {
 }
 
 async function waitForAuthentication(state, rawUrl, reason) {
-  const shouldLogWaiting = state.lastRestoreStatus !== "waiting_for_auth";
+  const shouldLogWaiting = !state.waitingDebugLogged;
 
   if (state.restoringUrl || state.phase === "restoring") {
     state.restoreAttempts = 0;
@@ -370,6 +374,7 @@ async function waitForAuthentication(state, rawUrl, reason) {
   state.lastObservedUrl = rawUrl;
   state.lastReason = reason;
   state.lastRestoreStatus = "waiting_for_auth";
+  if (shouldLogWaiting) state.waitingDebugLogged = true;
   await putState(state);
 
   if (shouldLogWaiting) {
