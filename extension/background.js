@@ -486,10 +486,11 @@ async function schedulePortalRecovery(origin, sourceTabId, sourceUrl, reason) {
   const recoverable = await getRecoverableStatesForOrigin(origin);
   if (!recoverable.length) return;
 
-  await appendDebug(sourceTabId, "auth_confirmed", sourceUrl, {
+  await appendDebug(-1, "auth_confirmed", sourceUrl, {
     portal: origin,
     reason,
-    pendingTabs: recoverable.length
+    pendingTabs: recoverable.length,
+    sourceTabId
   });
 
   const timer = setTimeout(() => {
