@@ -3,16 +3,18 @@
 importScripts("rules.js");
 
 const R = globalThis.ContextRestorerRules;
-const VERSION = "0.2.3";
+const VERSION = "0.2.4";
 const STATE_PREFIX = "tabState:";
 const DEBUG_KEY = "debugLog";
 const PORTALS_KEY = "portalRegistry";
 const STATS_KEY = "restoreStats";
 const MAX_RESTORE_ATTEMPTS = 1;
-const AUTO_RESTORE_COOLDOWN_MS = 2000;
+const AUTH_STABILIZATION_MS = 1500;
 const DEBUG_LIMIT = 160;
 
 let portalCache = null;
+const authRecoveryTimers = new Map();
+const authRecoveryInFlight = new Set();
 
 function stateKey(tabId) {
   return `${STATE_PREFIX}${tabId}`;
@@ -31,12 +33,14 @@ function blankState(tabId) {
     lastObservedUrl: null,
     pendingRestore: false,
     pendingSince: null,
+    recoveryEligible: false,
+    recoveryCause: null,
+    externalAuthObservedAt: null,
     restoreAttempts: 0,
     restoringUrl: null,
     restoreMode: null,
     restoreReason: null,
     restoreRequestedAt: null,
-    lastRestoreAttemptAt: null,
     automaticAttemptCount: 0,
     recoveryAttemptMode: null,
     recoveryAttemptReason: null,
@@ -61,6 +65,13 @@ async function putState(state) {
 
 async function removeState(tabId) {
   await chrome.storage.session.remove(stateKey(tabId));
+}
+
+async function getAllTabStates() {
+  const all = await chrome.storage.session.get(null);
+  return Object.entries(all)
+    .filter(([key, value]) => key.startsWith(STATE_PREFIX) && value)
+    .map(([, value]) => value);
 }
 
 async function appendDebug(tabId, event, url = null, detail = null) {
@@ -253,15 +264,8 @@ function isRedirectedNavigation(details) {
   return qualifiers.includes("server_redirect") || qualifiers.includes("client_redirect");
 }
 
-function isRecoverySurface(classified) {
-  return Boolean(classified.isAuthSurface || classified.isIntermediate || classified.isFallbackAfterAuth);
-}
-
-function isAutoRestoreCoolingDown(state) {
-  return Boolean(
-    state.lastRestoreAttemptAt &&
-    Date.now() - state.lastRestoreAttemptAt < AUTO_RESTORE_COOLDOWN_MS
-  );
+function isConfirmationEvent(sourceEvent) {
+  return sourceEvent === "committed" || sourceEvent === "history_state";
 }
 
 async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
@@ -276,12 +280,14 @@ async function saveUsefulUrl(tabId, rawUrl, portalOrigin, reason) {
   state.phase = "normal";
   state.pendingRestore = false;
   state.pendingSince = null;
+  state.recoveryEligible = false;
+  state.recoveryCause = null;
+  state.externalAuthObservedAt = null;
   state.restoreAttempts = 0;
   state.restoringUrl = null;
   state.restoreMode = null;
   state.restoreReason = null;
   state.restoreRequestedAt = null;
-  state.lastRestoreAttemptAt = null;
   state.automaticAttemptCount = 0;
   state.recoveryAttemptMode = null;
   state.recoveryAttemptReason = null;
@@ -299,31 +305,23 @@ async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
   const wasPending = state.pendingRestore;
 
   if (state.pendingRestore && state.phase === "restoring") {
-    // A restore attempt reached authentication again. Keep the saved context
-    // armed and let the next meaningful navigation event retry after cooldown.
     state.restoreAttempts = 0;
     state.restoringUrl = null;
     state.restoreMode = null;
     state.restoreReason = null;
     state.restoreRequestedAt = null;
     state.lastRestoreStatus = "waiting_for_auth";
-  } else if (state.pendingRestore && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
-    state.phase = "restore_blocked";
-    state.lastObservedUrl = rawUrl;
-    state.lastReason = "logout_after_restore";
-    state.lastRestoreStatus = "blocked";
-    await putState(state);
-    await appendDebug(tabId, "restore_blocked", rawUrl, "logout_after_restore");
-    return;
   }
 
   if (!state.lastUsefulUrl) {
     if (!wasPending) await appendDebug(tabId, "logout_without_saved_context", rawUrl, reason);
-    return;
+    return state;
   }
 
   state.pendingRestore = true;
   state.pendingSince = state.pendingSince || Date.now();
+  state.recoveryEligible = true;
+  state.recoveryCause = state.recoveryCause || reason;
   if (!wasPending) state.waitingDebugLogged = false;
   state.phase = "auth_lost";
   state.lastObservedUrl = rawUrl;
@@ -337,17 +335,21 @@ async function markSessionLost(tabId, rawUrl, portalOrigin, reason) {
       portal: portalOrigin
     });
   }
+
+  return state;
 }
 
 async function clearPending(state, reason, currentUrl) {
   state.pendingRestore = false;
   state.pendingSince = null;
+  state.recoveryEligible = false;
+  state.recoveryCause = null;
+  state.externalAuthObservedAt = null;
   state.restoreAttempts = 0;
   state.restoringUrl = null;
   state.restoreMode = null;
   state.restoreReason = null;
   state.restoreRequestedAt = null;
-  state.lastRestoreAttemptAt = null;
   state.automaticAttemptCount = 0;
   state.recoveryAttemptMode = null;
   state.recoveryAttemptReason = null;
@@ -385,6 +387,24 @@ async function waitForAuthentication(state, rawUrl, reason) {
   }
 }
 
+async function observeExternalAuthentication(tabId, rawUrl, sourceEvent) {
+  let state = await getState(tabId);
+  if (!state.portalOrigin || !state.lastUsefulUrl) return false;
+
+  const portal = await getPortal(state.portalOrigin);
+  if (!portal || !portal.enabled) return false;
+
+  if (!state.pendingRestore || state.phase === "restoring") {
+    await markSessionLost(tabId, rawUrl, state.portalOrigin, "external_freshworks_auth");
+    state = await getState(tabId);
+  }
+
+  state.externalAuthObservedAt = Date.now();
+  await putState(state);
+  await waitForAuthentication(state, rawUrl, sourceEvent === "committed" ? "external_freshworks_auth" : "external_auth_navigation");
+  return true;
+}
+
 async function restoreTab(state, reason, force = false) {
   if (!state.lastUsefulUrl || !state.portalOrigin) return { ok: false, reason: "no_saved_url" };
 
@@ -395,16 +415,11 @@ async function restoreTab(state, reason, force = false) {
   const portal = await getPortal(state.portalOrigin);
   if (!portal || !portal.enabled) return { ok: false, reason: "portal_disabled" };
 
-  if (!force && isAutoRestoreCoolingDown(state)) {
-    return { ok: false, reason: "cooldown" };
+  if (!force && !state.recoveryEligible) {
+    return { ok: false, reason: "not_recovery_eligible" };
   }
 
   if (!force && state.restoreAttempts >= MAX_RESTORE_ATTEMPTS) {
-    state.phase = "restore_blocked";
-    state.lastReason = "max_restore_attempts";
-    state.lastRestoreStatus = "blocked";
-    await putState(state);
-    await appendDebug(state.tabId, "restore_blocked", state.lastUsefulUrl, "max_restore_attempts");
     return { ok: false, reason: "max_restore_attempts" };
   }
 
@@ -416,7 +431,6 @@ async function restoreTab(state, reason, force = false) {
   state.restoreMode = force ? "manual" : "automatic";
   state.restoreReason = reason;
   state.restoreRequestedAt = Date.now();
-  state.lastRestoreAttemptAt = Date.now();
   state.recoveryAttemptMode = force ? "manual" : "automatic";
   state.recoveryAttemptReason = reason;
   state.lastRestoreStatus = "pending";
@@ -424,8 +438,6 @@ async function restoreTab(state, reason, force = false) {
   if (!force) state.automaticAttemptCount = (state.automaticAttemptCount || 0) + 1;
   await putState(state);
 
-  // Keep automatic retries quiet. Manual restores remain visible because they
-  // are explicit user actions and useful for troubleshooting.
   if (force) {
     await appendDebug(state.tabId, "restore", state.lastUsefulUrl, { reason, force: true });
   }
@@ -443,9 +455,75 @@ async function restoreTab(state, reason, force = false) {
   }
 }
 
+async function getRecoverableStatesForOrigin(origin) {
+  const states = await getAllTabStates();
+  return states.filter((state) =>
+    state.portalOrigin === origin &&
+    state.pendingRestore === true &&
+    state.recoveryEligible === true &&
+    Boolean(state.lastUsefulUrl) &&
+    state.phase !== "restoring"
+  );
+}
+
+async function restorePendingTabsForOrigin(origin) {
+  if (authRecoveryInFlight.has(origin)) return;
+  authRecoveryInFlight.add(origin);
+
+  try {
+    const states = await getRecoverableStatesForOrigin(origin);
+    for (const state of states) {
+      await restoreTab(state, "portal_auth_confirmed");
+    }
+  } finally {
+    authRecoveryInFlight.delete(origin);
+  }
+}
+
+async function schedulePortalRecovery(origin, sourceTabId, sourceUrl, reason) {
+  if (!origin || authRecoveryTimers.has(origin) || authRecoveryInFlight.has(origin)) return;
+
+  const recoverable = await getRecoverableStatesForOrigin(origin);
+  if (!recoverable.length) return;
+
+  await appendDebug(-1, "auth_confirmed", sourceUrl, {
+    portal: origin,
+    reason,
+    pendingTabs: recoverable.length,
+    sourceTabId
+  });
+
+  const timer = setTimeout(() => {
+    authRecoveryTimers.delete(origin);
+    void restorePendingTabsForOrigin(origin);
+  }, AUTH_STABILIZATION_MS);
+
+  authRecoveryTimers.set(origin, timer);
+}
+
+function isPositiveAuthenticationSignal(state, classified, details, sourceEvent) {
+  if (!isConfirmationEvent(sourceEvent)) return false;
+  if (classified.isAuthConfirmedSurface) return true;
+
+  return Boolean(
+    state.pendingRestore &&
+    state.externalAuthObservedAt &&
+    sourceEvent === "committed" &&
+    isRedirectedNavigation(details) &&
+    classified.isPortal &&
+    !classified.isLogout
+  );
+}
+
 async function handleBeforeNavigate(details) {
   if (details.frameId !== 0) return;
-  const { portal, state, inspected } = await resolvePortalForNavigation(details.tabId, details.url);
+  const resolved = await resolvePortalForNavigation(details.tabId, details.url);
+  const { portal, state, inspected } = resolved;
+
+  if (inspected.isExternalAuthSurface) {
+    await observeExternalAuthentication(details.tabId, details.url, "before_navigate");
+    return;
+  }
 
   if (!portal) {
     if (inspected.isCandidateApp) await saveCandidateUrl(details.tabId, details.url);
@@ -462,7 +540,7 @@ async function handleBeforeNavigate(details) {
   }
 
   if (!state.pendingRestore) return;
-  if (isRecoverySurface(c)) {
+  if (c.isAuthSurface || c.isIntermediate) {
     await waitForAuthentication(state, details.url, "auth_navigation");
   }
 }
@@ -471,6 +549,11 @@ async function handlePortalNavigation(details, sourceEvent) {
   if (details.frameId !== 0) return;
   const resolved = await resolvePortalForNavigation(details.tabId, details.url);
   const { portal, inspected } = resolved;
+
+  if (inspected.isExternalAuthSurface) {
+    await observeExternalAuthentication(details.tabId, details.url, sourceEvent);
+    return;
+  }
 
   if (!portal) {
     if (inspected.isCandidateApp) await saveCandidateUrl(details.tabId, details.url);
@@ -489,9 +572,6 @@ async function handlePortalNavigation(details, sourceEvent) {
   let state = await getState(details.tabId);
   if (state.portalOrigin !== portal.origin) state = await promoteCandidate(state, portal.origin);
 
-  // Some Freshservice session-expiry paths redirect directly to an auth/home
-  // surface without exposing /freshid/logout. If a real app context is already
-  // saved and Chromium reports a redirect, arm recovery without overwriting it.
   if (
     !state.pendingRestore &&
     state.lastUsefulUrl &&
@@ -504,15 +584,21 @@ async function handlePortalNavigation(details, sourceEvent) {
   }
 
   if (!state.pendingRestore) {
-    if (c.isUseful) await saveUsefulUrl(details.tabId, details.url, portal.origin, sourceEvent);
+    if (c.isUseful) {
+      await saveUsefulUrl(details.tabId, details.url, portal.origin, sourceEvent);
+      state = await getState(details.tabId);
+    }
+
+    if (isPositiveAuthenticationSignal(state, c, details, sourceEvent)) {
+      await schedulePortalRecovery(portal.origin, details.tabId, details.url, "authenticated_app_navigation");
+    }
     return;
   }
-
-  state.lastObservedUrl = details.url;
 
   if (c.isUseful && R.isExactSameDestination(details.url, state.lastUsefulUrl)) {
     state.lastUsefulUrl = R.canonical(details.url, portal.origin);
     state.lastUsefulAt = Date.now();
+
     if (
       (state.restoringUrl && R.isExactSameDestination(details.url, state.restoringUrl)) ||
       state.recoveryAttemptMode
@@ -522,58 +608,39 @@ async function handlePortalNavigation(details, sourceEvent) {
     } else {
       await clearPending(state, "native_exact_restore", details.url);
     }
+
+    await schedulePortalRecovery(portal.origin, details.tabId, details.url, "context_restored");
     return;
   }
 
-  if (c.isUseful && R.isSamePath(details.url, state.lastUsefulUrl)) {
-    await appendDebug(details.tabId, "same_path_context_missing", details.url, { saved: state.lastUsefulUrl });
-    await restoreTab(state, "same_path_context_missing");
-    return;
-  }
-
-  const recoveryPath = c.url?.pathname || "";
-  const isPendingRecoveryReload =
+  const returnedFromExternalAuth = Boolean(
+    state.externalAuthObservedAt &&
     sourceEvent === "committed" &&
-    details.transitionType === "reload" &&
-    (
-      recoveryPath === "/support/home" ||
-      recoveryPath === "/support/home/" ||
-      recoveryPath === "/support/login" ||
-      recoveryPath.startsWith("/support/login/") ||
-      recoveryPath === "/" ||
-      recoveryPath === "/a/dashboard" ||
-      recoveryPath === "/a/dashboard/" ||
-      recoveryPath === "/helpdesk/dashboard" ||
-      recoveryPath.startsWith("/helpdesk/dashboard/")
-    );
+    isRedirectedNavigation(details) &&
+    !c.isLogout
+  );
 
-  if (isPendingRecoveryReload) {
-    // Explicit F5 / Reload All Tabs acts as a user-requested retry trigger.
-    // It remains an automatic restore for statistics, but bypasses the cooldown.
-    state.restoreAttempts = 0;
-    state.restoringUrl = null;
-    state.restoreMode = null;
-    state.restoreReason = null;
-    state.restoreRequestedAt = null;
-    state.lastRestoreAttemptAt = null;
-    state.phase = "waiting_for_auth";
-    state.lastReason = "pending_recovery_reload";
+  if (returnedFromExternalAuth) {
+    state.externalAuthObservedAt = null;
     await putState(state);
-    await restoreTab(state, "pending_recovery_reload");
+    await schedulePortalRecovery(portal.origin, details.tabId, details.url, "returned_from_external_auth");
     return;
   }
 
-  if (isRecoverySurface(c)) {
+  if (isPositiveAuthenticationSignal(state, c, details, sourceEvent)) {
+    await schedulePortalRecovery(portal.origin, details.tabId, details.url, "authenticated_app_navigation");
+    return;
+  }
+
+  if (c.isAuthSurface || c.isIntermediate) {
     await waitForAuthentication(state, details.url, sourceEvent);
-    await restoreTab(state, c.isFallbackAfterAuth ? "freshservice_fallback_after_auth" : "automatic_recovery_surface");
     return;
   }
 
-  if (!c.isUseful) return;
-
-  state.lastUsefulUrl = R.canonical(details.url, portal.origin);
-  state.lastUsefulAt = Date.now();
-  await clearPending(state, "different_useful_destination", details.url);
+  // While recovery is pending, a different page must never replace the saved
+  // context. Only a confirmed authentication signal may release restoration.
+  state.lastObservedUrl = details.url;
+  await putState(state);
 }
 
 const httpsFilter = { url: [{ schemes: ["https"] }] };

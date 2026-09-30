@@ -2,6 +2,7 @@
   "use strict";
 
   const FRESHSERVICE_SUFFIX = ".freshservice.com";
+  const MYFRESHWORKS_SUFFIX = ".myfreshworks.com";
 
   function parseHttpsUrl(rawUrl) {
     try {
@@ -25,6 +26,17 @@
   function isStandardFreshserviceHost(hostname) {
     const host = String(hostname || "").toLowerCase();
     return host.endsWith(FRESHSERVICE_SUFFIX) && host.length > FRESHSERVICE_SUFFIX.length;
+  }
+
+  function isMyFreshworksHost(hostname) {
+    const host = String(hostname || "").toLowerCase();
+    return host === "myfreshworks.com" || host.endsWith(MYFRESHWORKS_SUFFIX);
+  }
+
+  function isExternalFreshworksAuthUrl(rawUrl) {
+    const url = parseHttpsUrl(rawUrl);
+    if (!url || !isMyFreshworksHost(url.hostname)) return false;
+    return hasPrefix(url.pathname, "/org/login");
   }
 
   function isFreshIdPath(pathname) {
@@ -81,6 +93,13 @@
     );
   }
 
+  function isAuthenticatedAppPath(pathname) {
+    return (
+      isHighConfidenceFreshservicePath(pathname) ||
+      hasPrefix(pathname, "/helpdesk/dashboard")
+    );
+  }
+
   function isCandidateFreshservicePath(pathname) {
     return (
       pathname === "/a" ||
@@ -102,6 +121,7 @@
         isStrongAuthSignal: false,
         isLogout: false,
         isWeakAuthSignal: false,
+        isExternalAuthSurface: false,
         isHighConfidenceApp: false,
         isCandidateApp: false
       };
@@ -121,6 +141,7 @@
         p === "/support/home" ||
         p === "/support/home/" ||
         hasPrefix(p, "/helpdesk/dashboard"),
+      isExternalAuthSurface: isExternalFreshworksAuthUrl(rawUrl),
       isHighConfidenceApp: isHighConfidenceFreshservicePath(p),
       isCandidateApp: isCandidateFreshservicePath(p) && !isTechnicalContext
     };
@@ -137,6 +158,7 @@
         isAuthSurface: false,
         isFallbackAfterAuth: false,
         isIntermediate: false,
+        isAuthConfirmedSurface: false,
         url: null
       };
     }
@@ -155,6 +177,7 @@
       isAuthSurface,
       isFallbackAfterAuth: isFallbackAfterAuthPath(p),
       isIntermediate,
+      isAuthConfirmedSurface: isAuthenticatedAppPath(p),
       url
     };
   }
@@ -181,9 +204,12 @@
 
   globalThis.ContextRestorerRules = {
     FRESHSERVICE_SUFFIX,
+    MYFRESHWORKS_SUFFIX,
     parseHttpsUrl,
     normalizeOrigin,
     isStandardFreshserviceHost,
+    isMyFreshworksHost,
+    isExternalFreshworksAuthUrl,
     isFreshIdPath,
     isStrongAuthPath,
     isLogoutPath,
@@ -191,6 +217,7 @@
     isIntermediatePath,
     isFallbackAfterAuthPath,
     isHighConfidenceFreshservicePath,
+    isAuthenticatedAppPath,
     isCandidateFreshservicePath,
     inspectUnknownUrl,
     classifyPortalUrl,
