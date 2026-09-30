@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.2.4 — Authentication-aware recovery
+
+### Fixed
+
+- Pending Freshservice contexts now wait passively while authentication is unavailable. Freshservice home/login/FreshID/fallback pages no longer trigger automatic navigation back to the saved page.
+- Removed the automatic retry loop/cooldown behavior introduced in v0.2.3. Reloading a waiting authentication page no longer forces a restore attempt.
+- Added explicit recovery eligibility per tab. Only tabs that actually lost their context through a session/authentication redirect are automatically restored.
+- Tabs that remain intact, including workflow editors or in-progress forms that were not redirected, are left untouched.
+- Added support for external Freshworks authentication pages matching `*.myfreshworks.com/org/login`. These pages preserve the original Freshservice portal association and saved context.
+- A successful navigation to an authenticated Freshservice application route confirms authentication for that portal.
+- A context that is restored natively or manually in one tab also confirms authentication for that portal and can release the other pending tabs.
+- Authentication confirmation is scoped to the Freshservice portal origin. A successful login on one portal does not automatically restore pending tabs belonging to another portal.
+- After authentication is confirmed, the extension waits approximately 1.5 seconds for the session to stabilize, then restores only eligible pending tabs to their own saved URLs.
+- Technical authentication/fallback pages never replace `lastUsefulUrl`.
+- Shared debug now records a single `auth_confirmed` event for the portal, followed by per-tab restore results.
+
+### Privacy and permissions
+
+- No cookie permission added.
+- No host permission added.
+- No token inspection.
+- No Freshservice/Freshworks authentication API polling.
+- Existing permissions remain limited to `storage` and `webNavigation`.
+
+### Behavior
+
+- **Restore now** remains an explicit manual fallback and may intentionally trigger the normal SSO flow if authentication is still unavailable.
+- A normal refresh while waiting for authentication preserves the saved context but does not force navigation.
+- External Freshworks errors such as `error=bad_credentials` keep the tab in `waiting_for_auth` until a later positive authentication signal is observed.
+
 ## v0.2.3 — Fully automatic authentication recovery
 
 ### Fixed
